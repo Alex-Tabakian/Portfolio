@@ -12,6 +12,7 @@ import Signup from './pages/Signup';
 import ResetPassword from './pages/ResetPassword';
 import Inventory from './pages/Inventory';
 import Build from './pages/Build';
+import Home from './pages/Home';
 
 // Debug: log types so we can spot "object" or undefined (common default/named mismatch)
 console.log('DEBUG imports:');
@@ -52,6 +53,7 @@ export default function App() {
         <SafeNavbar />
         <main style={{ padding: 20 }}>
           <Routes>
+            <Route path="/home" element={<Home />} />
             <Route path="/login" element={<SafeLogin />} />
             <Route path="/signup" element={<SafeSignup />} />
             <Route path="/reset" element={<SafeReset />} />

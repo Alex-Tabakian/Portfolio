@@ -4,7 +4,7 @@ import { useAuth } from '../components/AuthProvider';
 import { db } from '../firebase';
 import {
     collection, query, orderBy, onSnapshot,
-    addDoc, doc, updateDoc, serverTimestamp, Timestamp
+    addDoc, deleteDoc, doc, updateDoc, serverTimestamp, Timestamp
 } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 
@@ -113,6 +113,28 @@ export default function Inventory() {
         return new Date(ms).toLocaleDateString();
     }
 
+    async function handleDeletePart() {
+        if (!editing || !editing.id) return;
+        // confirm destructive action
+        if (!window.confirm(`Permanently delete "${editing.name}"? This cannot be undone.`)) return;
+
+        setError(''); setStatusMsg('Deleting...');
+        try {
+            const docRef = doc(db, 'users', user.uid, 'parts', editing.id);
+            await deleteDoc(docRef);
+
+            // close modal & show success
+            setEditing(null);
+            setStatusMsg('Deleted.');
+            setTimeout(() => setStatusMsg(''), 1200);
+        } catch (err) {
+            console.error('delete part failed', err);
+            setError(err.message || 'Delete failed');
+        } finally {
+            setStatusMsg('');
+        }
+    }
+
     async function handleAddPart(e) {
         e?.preventDefault?.();
         setError(''); setStatusMsg('');
@@ -127,13 +149,23 @@ export default function Inventory() {
                 qty: Number(form.qty) || 1,
                 vendor: form.vendor || '',
                 uuid: makeUUID(),
-                status: form.status || 'in_inventory',
+                status: 'in_inventory',
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
                 purchaseDate: form.purchaseDate ? Timestamp.fromDate(new Date(form.purchaseDate)) : null
             };
             await addDoc(partCollection, payload);
-            setForm({ name: '', type: 'Other', price: '', qty: 1, vendor: '', purchaseDate: '', status: 'in_inventory' });
+            const today = new Date().toISOString().split('T')[0];
+            setForm({
+                name: '',
+                type: 'Other',
+                price: '',
+                qty: 1,
+                vendor: '',
+                purchaseDate: today,
+                status: 'in_inventory'
+            });
+
             setStatusMsg('Saved.');
             setTimeout(() => setStatusMsg(''), 1500);
         } catch (err) {
@@ -206,12 +238,14 @@ export default function Inventory() {
             </div>
 
             <div style={{ marginTop: 12 }}>
-                <form onSubmit={handleAddPart} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 80px 140px 160px 140px 160px', gap: 8, alignItems: 'end' }}>
-                    <input
-                        value={form.name}
-                        onChange={e => setForm({ ...form, name: e.target.value })}
-                        placeholder={PLACEHOLDERS_BY_TYPE[form.type] || 'Enter part name'}
-                    />
+                <form onSubmit={handleAddPart} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 80px 140px 160px 160px', gap: 8, alignItems: 'end' }}>
+                    <div>
+                        <input
+                            value={form.name}
+                            onChange={e => setForm({ ...form, name: e.target.value })}
+                            placeholder={PLACEHOLDERS_BY_TYPE[form.type] || 'Enter part name'}
+                            input />
+                    </div>
 
 
                     <div>
@@ -223,7 +257,7 @@ export default function Inventory() {
 
                     <div>
                         <label style={{ fontSize: 12, color: '#64748b' }}>Qty</label>
-                        <input type="number" value={form.qty} min="1" onChange={e => setForm({ ...form, qty: Number(e.target.value) })} style={{ width: '75px'}}/>
+                        <input type="number" value={form.qty} min="1" onChange={e => setForm({ ...form, qty: Number(e.target.value) })} style={{ width: '75px' }} />
                     </div>
 
                     <div>
@@ -236,14 +270,7 @@ export default function Inventory() {
                         <input value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} style={{ width: '155px' }} placeholder="Newegg" />
                     </div>
 
-                    <div>
-                        <label style={{ fontSize: 12, color: '#64748b' }}>Status</label>
-                        <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} style={{ width: '135px' }}>
-                            <option value="in_inventory">In inventory</option>
-                            <option value="in_build">In a build</option>
-                            <option value="not_in_inventory">Not in inventory</option>
-                        </select>
-                    </div>
+
 
                     <div>
                         <label style={{ fontSize: 12, color: '#64748b' }}>Purchase date</label>
@@ -251,10 +278,9 @@ export default function Inventory() {
                             type="date"
                             value={form.purchaseDate}
                             onChange={e => setForm({ ...form, purchaseDate: e.target.value })}
-                            style={{ width: '100%', maxWidth: '160px', boxSizing: 'border-box' }}
+                            style={{ width: '160px' }}
                         />
                     </div>
-
 
                     <div style={{ gridColumn: '1/-1', display: 'flex', gap: 8, marginTop: 6 }}>
                         <button className="btn" type="submit">Add part</button>
@@ -294,9 +320,7 @@ export default function Inventory() {
                                     <div className="muted" style={{ fontSize: 13 }}>
                                         Qty: {p.qty || 1} • ${Number(p.price || 0).toFixed(2)} • Vendor: {p.vendor || '—'} • Purchased: {prettyDate(p.purchaseDate)}
                                     </div>
-                                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 6 }}>
-                                        UUID: <span style={{ fontFamily: 'monospace', background: '#f1f5f9', padding: '2px 6px', borderRadius: 6 }}>{p.uuid || p.id}</span>
-                                    </div>
+                                    
                                 </div>
                                 <div style={{ display: 'flex', gap: 8 }}>
                                     <button className="btn ghost" onClick={() => startEdit(p)}>Edit</button>
@@ -307,78 +331,120 @@ export default function Inventory() {
                 )}
             </div>
 
-            {/* Back to Home button at the bottom */}
-            <div style={{ marginTop: 30, textAlign: 'center' }}>
-                <button
-                    onClick={() => navigate('/Home')}
-                    style={{
-                        background: '#0ea5e9',
-                        color: '#fff',
-                        border: 'none',
-                        padding: '10px 16px',
-                        borderRadius: 8,
-                        cursor: 'pointer',
-                        fontWeight: 600
-                    }}
-                >
-                    ← Back to Home
-                </button>
-            </div>
-
             {editing && (
                 <div style={{
                     position: 'fixed', left: 0, top: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.35)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
                 }}>
-                    <div style={{ width: 720, background: '#fff', padding: 20, borderRadius: 10 }}>
-                        <h3>Edit part</h3>
-                        <form onSubmit={handleUpdatePart} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 80px 140px 160px 140px 160px', gap: 8, alignItems: 'end' }}>
+
+                    <div style={{ width: 720, maxWidth: '100%', background: '#fff', padding: 20, borderRadius: 10 }}>
+                        <h3 style={{ marginTop: 0 }}>Edit part</h3>
+
+                        <form
+                            onSubmit={handleUpdatePart}
+                            style={{
+                                display: 'grid',
+                                // responsive grid: fits as many 140px columns as will fit, then wraps
+                                gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                                gap: 10,
+                                alignItems: 'end'
+                            }}
+                        >
                             <div>
-                                <label style={{ fontSize: 12, color: '#64748b' }}>Name</label>
-                                <input value={editing.name || ''} onChange={e => setEditing({ ...editing, name: e.target.value })} />
+                                <label style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 6 }}>Name</label>
+                                <input
+                                    value={editing.name || ''}
+                                    onChange={e => setEditing({ ...editing, name: e.target.value })}
+                                    style={{ width: '100%', padding: 8, boxSizing: 'border-box', borderRadius: 6, border: '1px solid #e6eef5' }}
+                                    maxLength={50}
+                                />
                             </div>
 
                             <div>
-                                <label style={{ fontSize: 12, color: '#64748b' }}>Type</label>
-                                <select value={editing.type || 'Other'} onChange={e => setEditing({ ...editing, type: e.target.value })}>
+                                <label style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 6 }}>Type</label>
+                                <select
+                                    value={editing.type || 'Other'}
+                                    onChange={e => setEditing({ ...editing, type: e.target.value })}
+                                    style={{ width: '100%', padding: 8, boxSizing: 'border-box', borderRadius: 6, border: '1px solid #e6eef5' }}
+                                >
                                     {TYPES.filter(t => t !== 'all').map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
                             </div>
 
                             <div>
-                                <label style={{ fontSize: 12, color: '#64748b' }}>Qty</label>
-                                <input type="number" value={editing.qty || 1} onChange={e => setEditing({ ...editing, qty: Number(e.target.value) })} />
+                                <label style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 6 }}>Qty</label>
+                                <input
+                                    type="number"
+                                    value={editing.qty || 1}
+                                    onChange={e => setEditing({ ...editing, qty: Number(e.target.value) })}
+                                    style={{ width: '100%', padding: 8, boxSizing: 'border-box', borderRadius: 6, border: '1px solid #e6eef5' }}
+                                    min={1}
+                                />
                             </div>
 
                             <div>
-                                <label style={{ fontSize: 12, color: '#64748b' }}>Price</label>
-                                <input value={editing.price || 0} onChange={e => setEditing({ ...editing, price: e.target.value })} />
+                                <label style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 6 }}>Price</label>
+                                <input
+                                    value={editing.price || 0}
+                                    onChange={e => setEditing({ ...editing, price: e.target.value })}
+                                    style={{ width: '100%', padding: 8, boxSizing: 'border-box', borderRadius: 6, border: '1px solid #e6eef5' }}
+                                    maxLength={12}
+                                />
                             </div>
 
                             <div>
-                                <label style={{ fontSize: 12, color: '#64748b' }}>Vendor</label>
-                                <input value={editing.vendor || ''} onChange={e => setEditing({ ...editing, vendor: e.target.value })} />
+                                <label style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 6 }}>Vendor</label>
+                                <input
+                                    value={editing.vendor || ''}
+                                    onChange={e => setEditing({ ...editing, vendor: e.target.value })}
+                                    style={{ width: '100%', padding: 8, boxSizing: 'border-box', borderRadius: 6, border: '1px solid #e6eef5' }}
+                                    maxLength={30}
+                                />
                             </div>
 
                             <div>
-                                <label style={{ fontSize: 12, color: '#64748b' }}>Purchase date</label>
-                                <input type="date" value={editing.purchaseDate || ''} onChange={e => setEditing({ ...editing, purchaseDate: e.target.value })} style={{ width: '160px' }} />
+                                <label style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 6 }}>Purchase date</label>
+                                <input
+                                    type="date"
+                                    value={editing.purchaseDate || ''}
+                                    onChange={e => setEditing({ ...editing, purchaseDate: e.target.value })}
+                                    style={{ width: '100%', maxWidth: 160, padding: 8, boxSizing: 'border-box', borderRadius: 6, border: '1px solid #e6eef5' }}
+                                />
                             </div>
 
-                            {/* Status select in edit modal */}
                             <div>
-                                <label style={{ fontSize: 12, color: '#64748b' }}>Status</label>
-                                <select value={editing.status || 'in_inventory'} onChange={e => setEditing({ ...editing, status: e.target.value })}>
+                                <label style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 6 }}>Status</label>
+                                <select
+                                    value={editing.status || 'in_inventory'}
+                                    onChange={e => setEditing({ ...editing, status: e.target.value })}
+                                    style={{ width: '100%', padding: 8, boxSizing: 'border-box', borderRadius: 6, border: '1px solid #e6eef5' }}
+                                >
                                     <option value="in_inventory">In inventory</option>
                                     <option value="in_build">In a build</option>
                                     <option value="not_in_inventory">Not in inventory</option>
                                 </select>
                             </div>
 
-                            <div style={{ gridColumn: '1/-1', display: 'flex', gap: 8, marginTop: 6 }}>
+                            {/* Buttons row spans full width */}
+                            <div style={{ gridColumn: '1/-1', display: 'flex', gap: 8, marginTop: 6, justifyContent: 'flex-start', alignItems: 'center' }}>
                                 <button className="btn" type="submit">Save changes</button>
+
                                 <button type="button" className="btn ghost" onClick={() => setEditing(null)}>Cancel</button>
+
+                                {/* Delete button (destructive) */}
+                                <button
+                                    type="button"
+                                    className="btn danger"
+                                    onClick={handleDeletePart}
+                                    style={{ marginLeft: 8 }}
+                                >
+                                    Delete part
+                                </button>
+
+                                <div style={{ marginLeft: 'auto' }} className="muted">{statusMsg}</div>
                             </div>
+
+
                         </form>
                     </div>
                 </div>
